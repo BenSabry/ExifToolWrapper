@@ -1,10 +1,11 @@
 ﻿using System.Diagnostics;
 using System.Globalization;
 using System.Text;
+using Wrappers.DTO;
 
 namespace Wrappers;
 
-public class ExifToolWrapper : IDisposable
+public sealed class ExifToolWrapper : IDisposable
 {
     #region Fields
     private const string Directory = "Tools";
@@ -83,6 +84,42 @@ public class ExifToolWrapper : IDisposable
     private static bool TryParseDateTime(string s, string format, out DateTime result)
     {
         return DateTime.TryParseExact(s, format, CultureInfo.InvariantCulture, DateTimeStyles.None, out result);
+    }
+    #endregion
+
+    #region Exif
+    public static ExifDeleteOriginalResult DeleteOriginal(params string[] pathes)
+    {
+        if (pathes is null) return default;
+
+        const string command = "-overwrite_original -delete_original! -r";
+        var outputs = pathes.Select(path => InstaExecute(command, path));
+
+        const string directoryMessage = "directories scanned";
+        const string filesMessage = "image files found";
+        const string originalsMessage = "original files deleted";
+
+        long directories = 0, images = 0, originals = 0;
+        var separators = new char[] { '\r', '\n' };
+
+        foreach (var output in outputs)
+            foreach (var line in output.Split(separators, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var parts = line.Split(' ');
+                if (parts.Length == default
+                    || !int.TryParse(parts[0], out int value))
+                    continue;
+
+                var message = line.Remove(0, parts[0].Length + 1);
+                switch (message)
+                {
+                    case directoryMessage: directories += value; break;
+                    case filesMessage: images += value; break;
+                    case originalsMessage: originals += value; break;
+                }
+            }
+
+        return new ExifDeleteOriginalResult(directories, images, originals);
     }
     #endregion
 
