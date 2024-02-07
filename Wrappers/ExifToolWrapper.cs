@@ -5,12 +5,11 @@ using Wrappers.DTO;
 
 namespace Wrappers;
 
-public sealed class ExifToolWrapper : IDisposable
+public sealed partial class ExifToolWrapper : IDisposable
 {
     #region Fields
-    private const string Directory = "Tools";
     private const string ToolName = "exiftool.exe";
-    private const string ToolPath = $"{Directory}\\{ToolName}";
+    private const string ToolPath = $"Tools\\{ToolName}";
 
     private const string ReadyStatement = "{ready}";
     private const string ExecuteArgument = "-execute";
@@ -25,6 +24,10 @@ public sealed class ExifToolWrapper : IDisposable
     private readonly Process process;
     private readonly StreamWriter writer;
     private readonly StreamReader reader;
+
+    private readonly bool OverwriteOriginalFile;
+    private readonly bool AttemptToFixIncorrectOffsets;
+    private readonly bool IgnoreMinorErrorsAndWarnings;
     #endregion
 
     #region Constructors
@@ -33,8 +36,15 @@ public sealed class ExifToolWrapper : IDisposable
         if (!File.Exists(ToolPath))
             throw new FileNotFoundException($"{ToolName} is missing!");
     }
-    public ExifToolWrapper()
+    public ExifToolWrapper(
+        bool overwriteOriginalFile = false,
+        bool attemptToFixIncorrectOffsets = false,
+        bool ignoreMinorErrorsAndWarnings = false)
     {
+        OverwriteOriginalFile = overwriteOriginalFile;
+        AttemptToFixIncorrectOffsets = attemptToFixIncorrectOffsets;
+        IgnoreMinorErrorsAndWarnings = ignoreMinorErrorsAndWarnings;
+
         (process, writer, reader) = CreateProcess();
     }
     #endregion
@@ -85,6 +95,66 @@ public sealed class ExifToolWrapper : IDisposable
     {
         return DateTime.TryParseExact(s, format, CultureInfo.InvariantCulture, DateTimeStyles.None, out result);
     }
+    private static ExifResult BuildResult(string output)
+    {
+        #region Constants
+        const char LineSeparator = '\n';
+        const char ExifTagStart = '-';
+        const char EqualsChar = '=';
+        const char TagSeparator = ':';
+        const char StatusSeparator = ' ';
+
+        const string updateMessage = "image files updated";
+        const string errorMessage = "files weren't updated due to errors";
+        const string couldReadMessage = "image files read";
+        const string couldNotReadMessage = "files could not be read";
+        const string unchanged = "image files unchanged";
+
+        const StringComparison comp = StringComparison.OrdinalIgnoreCase;
+        #endregion
+
+        var updates = 0;
+        var errors = 0;
+
+        var tags = new Dictionary<string, string>();
+        foreach (var line in output.Split(LineSeparator))
+            if (line.StartsWith(ExifTagStart))
+            {
+                var equal = line.IndexOf(EqualsChar);
+                var keyStart = line.IndexOf(TagSeparator);
+                var key = line.Substring(keyStart + 1, equal - keyStart - 1);
+
+                tags.Add(key, line.Substring(equal + 1).Trim());
+            }
+
+            else if (line.Contains(StatusSeparator, comp))
+            {
+                var index = line.IndexOf(StatusSeparator);
+                var value = line.Substring(0, index + 1);
+
+                if (int.TryParse(value, out int number))
+                {
+                    var message = line.Substring(index + 1);
+                    switch (message)
+                    {
+                        case couldReadMessage: updates += number; break;
+                        case couldNotReadMessage: errors += number; break;
+                        case updateMessage: updates += number; break;
+                        case errorMessage: errors += number; break;
+                        case unchanged: errors += number; break;
+                        default: break;
+                    }
+                }
+            }
+#if DEBUG
+            else
+            {
+
+            }
+#endif
+
+        return new ExifResult(output, tags, updates, errors);
+    }
     #endregion
 
     #region Exif
@@ -128,6 +198,17 @@ public sealed class ExifToolWrapper : IDisposable
     {
         WriteArguments(args);
         return ReadOutput();
+    }
+    public Dictionary<string, string> ReadMetadata(string path)
+    {
+        return Read(new List<string> { path }).Tags;
+    }
+    public bool TryWriteMetadata(string path, Dictionary<string, string> tags)
+    {
+        var args = new List<string> { path };
+        args.AddRange(tags.Select(i => $"-{i.Key}={i.Value}"));
+
+        return TryWrite(args);
     }
 
     private (Process, StreamWriter, StreamReader) CreateProcess()
@@ -175,6 +256,30 @@ public sealed class ExifToolWrapper : IDisposable
         }
 
         return sb.ToString().Trim();
+    }
+
+    private ExifResult Read(List<string> args)
+    {
+        AppendArgumentsBySettings(ref args, false);
+
+        return BuildResult(Execute(args.ToArray()));
+    }
+    private bool TryWrite(List<string> args)
+    {
+        AppendArgumentsBySettings(ref args, true);
+
+        var r = BuildResult(Execute(args.ToArray()));
+        return r.Updates > 0 && r.Errors == default;
+    }
+    private void AppendArgumentsBySettings(ref List<string> args, bool isWrite)
+    {
+        if (IgnoreMinorErrorsAndWarnings) args.Add("-m");
+
+        if (isWrite)
+        {
+            if (OverwriteOriginalFile) args.Add("-overwrite_original");
+            if (AttemptToFixIncorrectOffsets) args.Add("-F");
+        }
     }
     #endregion
 
