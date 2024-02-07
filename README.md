@@ -1,5 +1,5 @@
 # ExifToolWrapper
-A C# Wrapper for ExifTool 
+ExifToolWrapper is a C# library that provides various helper methods and features using ExifTool.
 
 # Usage
 ```C#
