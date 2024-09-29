@@ -19,7 +19,13 @@ using (ExifToolWrapper exif = new ExifToolWrapper())
 {
     var dates = exif.Execute(path, "-AllDates");    //Read
     exif.Execute(path, $"-FileModifyDate={date}");  //Write
+
+    var props = exif.ReadMetadata(path);            //Read
+    exif.TryWriteMetadata(path, props);             //Write
 }
+
+//Delete original files after processing them by Exif
+ExifToolWrapper.DeleteOriginal(@"D:\Media");
 ```
 
 ## About ExifTool
