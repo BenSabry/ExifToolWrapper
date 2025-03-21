@@ -5,6 +5,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 using Wrappers.DTO;
 
 namespace Wrappers
@@ -16,8 +17,8 @@ namespace Wrappers
         private const string ReadyStatement = "{ready}";
         private const string ExecuteArgument = "-execute";
         private const string StartupArgs = @"-stay_open true -@ - -common_args -charset UTF8 -G1 -args";
-        private const string ShutdownArgs = "-stay_open\nfalse";
-        private const int ExitTimeout = 10_000;
+        private const string ShutdownArgs = "-stay_open\nfalse\n";
+        private const int ExitTimeout = 1_000;
 
         private const string DateFormat = "yyyy:MM:dd HH:mm:sszzz";
         private const string DateFormatWithoutTZ = "yyyy:MM:dd HH:mm:ss";
@@ -302,9 +303,13 @@ namespace Wrappers
             if (disposing)
             {
                 WriteArguments(ShutdownArgs);
+                Task.Delay(ExitTimeout).Wait();
 
-                if (!process.WaitForExit(ExitTimeout))
+                if (!process.CloseMainWindow() ||
+                    !process.WaitForExit(ExitTimeout))
                     process.Kill();
+
+                process.Close();
 
                 reader.Dispose();
                 writer.Dispose();
