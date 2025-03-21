@@ -231,7 +231,7 @@ namespace Wrappers
             });
 
             if (p is null || p.HasExited)
-                throw new ApplicationException("Failed to start ExifTool");
+                throw new InvalidOperationException("Failed to start ExifTool");
 
             return (p, new StreamWriter(p.StandardInput.BaseStream, encoding), p.StandardOutput);
         }
